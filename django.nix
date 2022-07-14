@@ -168,30 +168,38 @@ in {
       type = types.attrsOf (types.submodule {
         options = {
           package = mkOption { type = types.package; };
-          staticFilesPackage = mkOption {
-            type = types.package;
-            default = null;
-          };
+          staticFilesPackage = mkOption { type = types.package; };
 
           hostname = mkOption { type = types.str; };
           aliases = mkOption {
             type = types.listOf types.str;
             default = [ ];
+            description =
+              "Additional hostnames that should redirect to `hostname`.";
           };
 
           settingsModule = mkOption {
             type = types.nullOr types.str;
             default = null;
+            description = ''
+              Import path for settings module. If not set, defaults to "<packageName>.config.settings.base"
+            '';
           };
 
           wsgiModule = mkOption {
             type = types.nullOr types.str;
             default = null;
+            description = ''
+              Import path for wsgi module. If not set, defaults to "<packageName>.config.wsgi"
+            '';
           };
 
           port = mkOption {
             type = types.int;
             default = 443;
+            description = ''
+              HTTP port to listen to.
+            '';
           };
 
           auth = mkOption {
@@ -202,6 +210,9 @@ in {
               };
             });
             default = null;
+            description = ''
+              If set, require an HTTP auth.
+            '';
           };
 
           mediaUrl = mkOption {
@@ -252,6 +263,7 @@ in {
       isSystemUser = true;
       group = site;
     }) siteConfigs;
+
     users.groups = lib.attrsets.mapAttrs (site: conf: { }) siteConfigs;
   };
 }
