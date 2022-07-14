@@ -100,6 +100,7 @@ let
             --pythonpath ${instanceConfig.package} \
             --bind unix:${gunicornSock} \
             --workers ${toString instanceConfig.nbWorkers} \
+            --worker-class gevent \
             ${wsgiModule}:application
         '';
       };
