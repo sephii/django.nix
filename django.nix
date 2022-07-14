@@ -99,6 +99,7 @@ let
             --name gunicorn-${instanceName} \
             --pythonpath ${instanceConfig.package} \
             --bind unix:${gunicornSock} \
+            --workers ${toString instanceConfig.nbWorkers} \
             ${wsgiModule}:application
         '';
       };
@@ -226,6 +227,12 @@ in {
             type = types.str;
             default = "/static/";
             description = "Path or URL to static files (ie. STATIC_URL)";
+          };
+
+          nbWorkers = mkOption {
+            type = types.int;
+            default = 1;
+            description = "Number of gunicorn workers to start";
           };
         };
       });
