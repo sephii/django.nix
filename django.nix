@@ -57,7 +57,9 @@ let
           User = instanceName;
         };
         script = ''
-          test ! -s ${secretKeyFile} && ${instanceConfig.package.python}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'export SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile}
+          test ! -s ${secretKeyFile} && \
+          ${instanceConfig.package.python}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'export SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile} || \
+          exit 0
         '';
         wantedBy = [ "multi-user.target" ];
       };
