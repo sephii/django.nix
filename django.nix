@@ -25,8 +25,7 @@ let
         (mapAttrsToList (name: value: ''export ${name}="${value}"'') {
           DJANGO_SETTINGS_MODULE = settingsModule;
           DATABASE_URL = "postgresql:///${instanceName}";
-          ALLOWED_HOSTS = concatStringsSep ","
-            ([ instanceConfig.hostname ] ++ instanceConfig.aliases);
+          ALLOWED_HOSTS = instanceConfig.hostname;
           MEDIA_ROOT = mediaDir;
           # The secret key is overridden by the contents of the secret key file
           SECRET_KEY = "";
