@@ -8,15 +8,16 @@ let
   startsWith = needle: haystack:
     substring 0 (stringLength needle) haystack == needle;
   isLocalPath = path: startsWith "/" path;
+
   siteToConfig = instanceName: instanceConfig:
     let
       settingsModule =
-        withDefault "${instanceConfig.pkg.pname}.config.settings.base"
+        withDefault "${instanceConfig.package.pname}.config.settings.base"
         instanceConfig.settingsModule;
-      wsgiModule = withDefault "${instanceConfig.pkg.pname}.config.wsgi"
+
+      wsgiModule = withDefault "${instanceConfig.package.pname}.config.wsgi"
         instanceConfig.wsgiModule;
 
-      staticDir = "/var/www/${instanceName}/static";
       mediaDir = "/var/www/${instanceName}/media";
       secretKeyFile = "/var/www/${instanceName}/secret_key";
 
@@ -24,8 +25,8 @@ let
         (mapAttrsToList (name: value: ''export ${name}="${value}"'') {
           DJANGO_SETTINGS_MODULE = settingsModule;
           DATABASE_URL = "postgresql:///${instanceName}";
-          ALLOWED_HOSTS = concatStringsSep "," instanceConfig.hostnames;
-          STATIC_ROOT = staticDir;
+          ALLOWED_HOSTS = concatStringsSep ","
+            ([ instanceConfig.hostname ] ++ instanceConfig.aliases);
           MEDIA_ROOT = mediaDir;
           # The secret key is overridden by the contents of the secret key file
           SECRET_KEY = "";
@@ -35,17 +36,19 @@ let
 
           source ${secretKeyFile}'';
 
-      caddyHostnames = concatStringsSep ", "
-        (map (x: "${x}:${toString instanceConfig.port}")
-          instanceConfig.hostnames);
-
       gunicornRunDir = "/run/gunicorn_${instanceName}";
       gunicornSock = "${gunicornRunDir}/gunicorn.sock";
+
+      localStaticPaths = concatStringsSep " " (map (path: "${path}*")
+        (filter isLocalPath [
+          instanceConfig.staticUrl
+          instanceConfig.mediaUrl
+        ]));
     in {
       manageScript = pkgs.writeScriptBin "manage-${instanceName}" ''
         #!${pkgs.bash}/bin/bash
         ${exports}
-        ${instanceConfig.pkg.dependencyEnv}/bin/django-admin $@
+        ${instanceConfig.package}/bin/django-admin $@
       '';
 
       createSecretKeyTask = {
@@ -55,7 +58,7 @@ let
           User = instanceName;
         };
         script = ''
-          test ! -s ${secretKeyFile} && ${instanceConfig.pkg.dependencyEnv}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'export SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile}
+          test ! -s ${secretKeyFile} && ${instanceConfig.package.python}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'export SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile}
         '';
         wantedBy = [ "multi-user.target" ];
       };
@@ -71,8 +74,7 @@ let
         };
         script = ''
           ${exports}
-          ${instanceConfig.pkg.dependencyEnv}/bin/django-admin collectstatic --noinput
-          ${instanceConfig.pkg.dependencyEnv}/bin/django-admin migrate --noinput
+          ${instanceConfig.package}/bin/django-admin migrate --noinput
         '';
       };
 
@@ -90,12 +92,11 @@ let
           RuntimeDirectory = "gunicorn_${instanceName}";
           ExecReload = "${pkgs.coreutils}/bin/kill -s HUP $MAINPID";
         };
-        script = let pkg = instanceConfig.pkg;
-        in ''
+        script = ''
           ${exports}
-          ${pkg.python.pkgs.gunicorn}/bin/gunicorn \
+          ${instanceConfig.package}/bin/gunicorn \
             --name gunicorn-${instanceName} \
-            --pythonpath ${pkg.dependencyEnv}/${pkg.python.sitePackages} \
+            --pythonpath ${instanceConfig.package} \
             --bind unix:${gunicornSock} \
             ${wsgiModule}:application
         '';
@@ -106,59 +107,55 @@ let
         ensurePermissions = { "DATABASE ${instanceName}" = "ALL PRIVILEGES"; };
       };
 
-      localStaticPaths = concatStringSep " " (map (path: "${path}*")
-        (filter isLocalPath [
-          instanceConfig.staticUrl
-          instanceConfig.mediaUrl
-        ]));
-
-      caddyConf = ''
-        ${caddyHostnames} {
-          ${
-            optionalString (instanceConfig.auth != null) ''
+      caddyVhosts = {
+        "${instanceConfig.hostname}:${toString instanceConfig.port}" = {
+          serverAliases =
+            map (hostname: "${hostname}:${toString instanceConfig.port}")
+            instanceConfig.aliases;
+          extraConfig = ''
+            ${optionalString (instanceConfig.auth != null) ''
               basicauth * {
                 ${instanceConfig.auth.user} ${instanceConfig.auth.password}
-              }''
-          }
+              }''}
 
-          ${
-            if localStaticPaths != "" then ''
-              @static {
-                path ${localStaticPaths}
-              }
-
+            ${if localStaticPaths != "" then ''
               @notStatic {
                 not path ${localStaticPaths}
               }
 
-              file_server @static {
+              file_server ${instanceConfig.mediaUrl} {
                 root /var/www/${instanceName}
+              }
+
+              file_server ${instanceConfig.staticUrl} {
+                root ${instanceConfig.staticFilesPackage}
               }
 
               reverse_proxy @notStatic unix/${gunicornSock}'' else ''
                 reverse_proxy unix/${gunicornSock}
-              ''
-          }
-        }
-
-        ${optionalString (!isLocalPath instanceConfig.staticUrl) ''
-          ${instanceConfig.staticUrl}:${instanceConfig.port} {
+              ''}
+          '';
+        };
+      } // (optionalAttrs (!isLocalPath instanceConfig.staticUrl) {
+        "${instanceConfig.staticUrl}:${instanceConfig.port}" = {
+          extraConfig = ''
             file_server {
-              root ${staticDir}
+              root ${instanceConfig.staticFilesPackage}
             }
-          }''}
-
-        ${optionalString (!isLocalPath instanceConfig.mediaUrl) ''
-          ${instanceConfig.mediaUrl}:${instanceConfig.port} {
+          '';
+        };
+      }) // (optionalAttrs (!isLocalPath instanceConfig.mediaUrl) {
+        "${instanceConfig.mediaUrl}:${instanceConfig.port}" = {
+          extraConfig = ''
             file_server {
               root ${mediaDir}
             }
-          }''}
-      '';
+          '';
+        };
+      });
 
       staticDirs = [
         "d /var/www/${instanceName} 0555 ${instanceName} caddy - -"
-        "d ${staticDir} 0755 ${instanceName} caddy - -"
         "d ${mediaDir} 0755 ${instanceName} caddy - -"
         "f ${secretKeyFile} 0750 ${instanceName} ${instanceName} - -"
       ];
@@ -170,11 +167,17 @@ in {
     sites = mkOption {
       type = types.attrsOf (types.submodule {
         options = {
-          pkg = mkOption { type = types.package; };
+          package = mkOption { type = types.package; };
+          staticFilesPackage = mkOption {
+            type = types.package;
+            default = null;
+          };
 
-          hostnames = mkOption { type = types.listOf types.str; };
-
-          secretKey = mkOption { type = types.str; };
+          hostname = mkOption { type = types.str; };
+          aliases = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+          };
 
           settingsModule = mkOption {
             type = types.nullOr types.str;
@@ -217,7 +220,7 @@ in {
     };
   };
 
-  config = mkIf (cfg.sites != { }) {
+  config = mkIf (cfg.sites != [ ]) {
     environment.systemPackages =
       mapAttrsToList (site: conf: conf.manageScript) siteConfigs;
 
@@ -241,8 +244,8 @@ in {
 
     services.caddy = {
       enable = true;
-      config = lib.concatStringsSep "\n"
-        (mapAttrsToList (site: conf: conf.caddyConf) siteConfigs);
+      virtualHosts = foldl' (s1: s2: s1 // s2) { }
+        (mapAttrsToList (site: conf: conf.caddyVhosts) siteConfigs);
     };
 
     users.users = lib.attrsets.mapAttrs (site: conf: {

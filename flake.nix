@@ -1,1 +1,5 @@
-{ outputs = { ... }: { nixosModule = import ./django.nix; }; }
+{
+  outputs = { self, nixpkgs }: {
+    nixosModules.djangonix = import ./django.nix;
+  };
+}
