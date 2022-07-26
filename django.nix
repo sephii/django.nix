@@ -22,7 +22,7 @@ let
       secretKeyFile = "/var/www/${instanceName}/secret_key";
 
       exports = (concatStringsSep "\n"
-        (mapAttrsToList (name: value: ''export ${name}="${value}"'') {
+        (mapAttrsToList (name: value: ''export ${name}="${value}"'') ({
           DJANGO_SETTINGS_MODULE = settingsModule;
           DATABASE_URL = "postgresql:///${instanceName}";
           ALLOWED_HOSTS = instanceConfig.hostname;
@@ -31,7 +31,8 @@ let
           SECRET_KEY = "";
           MEDIA_URL = instanceConfig.mediaUrl;
           STATIC_URL = instanceConfig.staticUrl;
-        })) + ''
+          STATIC_ROOT = instanceConfig.staticFilesPackage;
+        } // instanceConfig.extraEnv))) + ''
 
           source ${secretKeyFile}'';
 
@@ -234,6 +235,12 @@ in {
             type = types.int;
             default = 1;
             description = "Number of gunicorn workers to start";
+          };
+
+          extraEnv = mkOption {
+            type = types.attrsOf types.str;
+            default = { };
+            description = "Additional environment variables to export";
           };
         };
       });
