@@ -21,20 +21,29 @@ let
       mediaDir = "/var/www/${instanceName}/media";
       secretKeyFile = "/var/www/${instanceName}/secret_key";
 
-      exports = (concatStringsSep "\n"
-        (mapAttrsToList (name: value: ''export ${name}="${value}"'') ({
-          DJANGO_SETTINGS_MODULE = settingsModule;
-          DATABASE_URL = "postgresql:///${instanceName}";
-          ALLOWED_HOSTS = instanceConfig.hostname;
-          MEDIA_ROOT = mediaDir;
-          # The secret key is overridden by the contents of the secret key file
-          SECRET_KEY = "";
-          MEDIA_URL = instanceConfig.mediaUrl;
-          STATIC_URL = instanceConfig.staticUrl;
-          STATIC_ROOT = instanceConfig.staticFilesPackage;
-        } // instanceConfig.extraEnv))) + ''
+      environment = (mapAttrsToList (name: value: ''${name}="${value}"'') ({
+        DJANGO_SETTINGS_MODULE = settingsModule;
+        DATABASE_URL = "postgresql:///${instanceName}";
+        ALLOWED_HOSTS = instanceConfig.hostname;
+        MEDIA_ROOT = mediaDir;
+        # The secret key is overridden by the contents of the secret key file
+        SECRET_KEY = "";
+        MEDIA_URL = instanceConfig.mediaUrl;
+        STATIC_URL = instanceConfig.staticUrl;
+        STATIC_ROOT = instanceConfig.staticFilesPackage;
+      } // instanceConfig.extraEnv));
 
-          source ${secretKeyFile}'';
+      environmentFiles = [ secretKeyFile ] ++ instanceConfig.extraEnvFiles;
+      sourceEnvironmentFiles = ''
+        set -a
+        ${concatStringsSep "\n" (map (file: "source ${file}") environmentFiles)}
+        set +a
+      '';
+
+      exports = ''
+        export ${concatStringsSep " " environment}
+        ${sourceEnvironmentFiles}
+      '';
 
       gunicornRunDir = "/run/gunicorn_${instanceName}";
       gunicornSock = "${gunicornRunDir}/gunicorn.sock";
@@ -56,6 +65,7 @@ let
 
       createSecretKeyTask = {
         description = "Create secret key for ${instanceName}";
+        wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           Type = "oneshot";
           User = instanceName;
@@ -63,17 +73,21 @@ let
         script = ''
           test -s ${secretKeyFile} || ${dependencyEnv}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'export SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile} && exit 0
         '';
-        wantedBy = [ "multi-user.target" ];
       };
 
       maintenanceTasks = {
         description = "Maintenance tasks for ${instanceName}";
-        requiredBy = [ "gunicorn-${instanceName}.service" ];
-        requires = [ "postgresql.service" "secret-key-${instanceName}" ];
-        after = [ "network-online.target" ];
+        wantedBy = [ "multi-user.target" ];
+        after = [
+          "network.target"
+          "postgresql.service"
+          "secret-key-${instanceName}.service"
+        ];
         serviceConfig = {
           Type = "oneshot";
           User = instanceName;
+          Environment = environment;
+          EnvironmentFile = environmentFiles;
         };
         script = ''
           ${exports}
@@ -84,16 +98,13 @@ let
       gunicornService = {
         description = "Gunicorn daemon for ${instanceName}";
         wantedBy = [ "multi-user.target" ];
-        requires = [
-          "postgresql.service"
-          "maintenance-${instanceName}.service"
-          "secret-key-${instanceName}.service"
-        ];
-        after = [ "network.target" ];
+        after = [ "maintenance-${instanceName}.service" ];
         serviceConfig = {
           User = instanceName;
           RuntimeDirectory = "gunicorn_${instanceName}";
           ExecReload = "${pkgs.coreutils}/bin/kill -s HUP $MAINPID";
+          Environment = environment;
+          EnvironmentFile = environmentFiles;
         };
 
         script = let
@@ -251,6 +262,13 @@ in {
             type = types.attrsOf types.str;
             default = { };
             description = "Additional environment variables to export";
+          };
+
+          extraEnvFiles = mkOption {
+            type = types.listOf types.str;
+            default = [ ];
+            description =
+              "Additional files to source as environment variables (useful for secrets)";
           };
 
           disableACME = mkOption {
