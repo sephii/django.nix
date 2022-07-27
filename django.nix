@@ -44,11 +44,14 @@ let
           instanceConfig.staticUrl
           instanceConfig.mediaUrl
         ]));
+
+      dependencyEnv = instanceConfig.package.dependencyEnv.overrideAttrs
+        (oldAttrs: { pathsToLink = [ "/lib" ]; });
     in {
       manageScript = pkgs.writeScriptBin "manage-${instanceName}" ''
         #!${pkgs.bash}/bin/bash
         ${exports}
-        ${instanceConfig.package}/bin/django-admin $@
+        ${dependencyEnv}/bin/django-admin $@
       '';
 
       createSecretKeyTask = {
@@ -76,7 +79,7 @@ let
         };
         script = ''
           ${exports}
-          ${instanceConfig.package}/bin/django-admin migrate --noinput
+          ${dependencyEnv}/bin/django-admin migrate --noinput
         '';
       };
 
@@ -98,7 +101,7 @@ let
           ${exports}
           ${instanceConfig.package}/bin/gunicorn \
             --name gunicorn-${instanceName} \
-            --pythonpath ${instanceConfig.package} \
+            --pythonpath ${dependencyEnv}/${instanceConfig.package.python.sitePackages} \
             --bind unix:${gunicornSock} \
             --workers ${toString instanceConfig.nbWorkers} \
             --worker-class gevent \
