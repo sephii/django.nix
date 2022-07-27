@@ -134,12 +134,13 @@ let
                 not path ${localStaticPaths}
               }
 
-              file_server ${instanceConfig.mediaUrl} {
+              file_server ${instanceConfig.mediaUrl}* {
                 root /var/www/${instanceName}
               }
 
-              file_server ${instanceConfig.staticUrl} {
-                root ${instanceConfig.staticFilesPackage}
+              handle_path ${instanceConfig.staticUrl}* {
+                root * ${instanceConfig.staticFilesPackage}
+                file_server
               }
 
               reverse_proxy @notStatic unix/${gunicornSock}'' else ''
