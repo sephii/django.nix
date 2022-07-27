@@ -117,6 +117,10 @@ let
             map (hostname: "${hostname}:${toString instanceConfig.port}")
             instanceConfig.aliases;
           extraConfig = ''
+            ${optionalString instanceConfig.disableACME ''
+              tls internal
+            ''}
+
             ${optionalString (instanceConfig.auth != null) ''
               basicauth * {
                 ${instanceConfig.auth.user} ${instanceConfig.auth.password}
@@ -241,6 +245,13 @@ in {
             type = types.attrsOf types.str;
             default = { };
             description = "Additional environment variables to export";
+          };
+
+          disableACME = mkOption {
+            type = types.bool;
+            default = false;
+            description =
+              "If true, the HTTPS certificate will be self-signed instead of requested through ACME";
           };
         };
       });
