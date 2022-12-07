@@ -37,6 +37,9 @@ This will:
 * Create a Caddy configuration with automatic HTTPS
 * Run the `migrate` command on activation
 
+Have a look at the [django.nix example](https://github.com/sephii/django.nix-example) and the [Django site packaged
+with Nix example](https://github.com/sephii/django-nix-package-example) for working examples.
+
 ## Options
 
 ### `package`
