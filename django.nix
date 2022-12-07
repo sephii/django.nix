@@ -111,7 +111,6 @@ let
           gunicornEnv = instanceConfig.package.python.withPackages
             (ps: [ ps.gunicorn ps.setuptools ps.gevent ]);
         in ''
-          ${exports}
           ${gunicornEnv}/bin/gunicorn \
             --name gunicorn-${instanceName} \
             --pythonpath ${dependencyEnv}/${instanceConfig.package.python.sitePackages} \
