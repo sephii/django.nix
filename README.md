@@ -172,3 +172,43 @@ Default value: `false`
 
 Set this to `true` to use self-signed certificates instead of requesting them
 through ACME. Very useful for testing!
+
+### `manageScript`
+
+Read-only
+
+This option will contain a derivation that allows you to run Django management
+commands. To invoke it, use
+`${config.django.sites.my_site.manageScript}/bin/manage-my_site`. For example ,
+to create a systemd timer that runs a Django management command every minute:
+
+``` nix
+  systemd.timers.mysite-clean-expired-orders = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "60s";
+      OnUnitInactiveSec = "60s";
+      Unit = "mysite-clean-expired-orders.service";
+    };
+  };
+
+  systemd.services.mysite-clean-expired-orders = {
+    serviceConfig.Type = "oneshot";
+    serviceConfig.User = config.django.sites.my_site.user;
+    script = "${config.django.sites.my_site.manageScript}/bin/manage-my_site clean_orders";
+  };
+```
+
+### `user`
+
+Default value: name of the site instance
+
+The user to run gunicorn and the manage script as. It will be automatically
+created.
+
+### `group`
+
+Default value: name of the site instance
+
+The group to run gunicorn and the manage script as. It will be automatically
+created.

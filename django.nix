@@ -9,20 +9,128 @@ let
     substring 0 (stringLength needle) haystack == needle;
   isLocalPath = path: startsWith "/" path;
 
+  siteOpts = { name, ... }:
+    let
+      instanceName = name;
+      instanceConfig = cfg.sites.${name};
+    in {
+      options = {
+        package = mkOption { type = types.package; };
+        staticFilesPackage = mkOption { type = types.package; };
+        manageScript = mkOption {
+          type = types.package;
+          readOnly = true;
+          visible = false;
+        };
+
+        hostname = mkOption { type = types.str; };
+        aliases = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          description =
+            "Additional hostnames that should redirect to `hostname`.";
+        };
+
+        settingsModule = mkOption {
+          type = types.nullOr types.str;
+          default = "${instanceConfig.package.pname}.config.settings.base";
+          description = ''
+            Import path for the settings module."
+          '';
+        };
+
+        wsgiModule = mkOption {
+          type = types.nullOr types.str;
+          default = "${instanceConfig.package.pname}.config.wsgi";
+          description = ''
+            Import path for the wsgi module."
+          '';
+        };
+
+        port = mkOption {
+          type = types.int;
+          default = 443;
+          description = ''
+            HTTP port to listen to.
+          '';
+        };
+
+        auth = mkOption {
+          type = types.nullOr (types.submodule {
+            options = {
+              user = mkOption { type = types.str; };
+              password = mkOption { type = types.str; };
+            };
+          });
+          default = null;
+          description = ''
+            If set, require an HTTP auth.
+          '';
+        };
+
+        mediaUrl = mkOption {
+          type = types.str;
+          default = "/media/";
+          description = "Path or URL to media files (ie. MEDIA_URL)";
+        };
+
+        staticUrl = mkOption {
+          type = types.str;
+          default = "/static/";
+          description = "Path or URL to static files (ie. STATIC_URL)";
+        };
+
+        nbWorkers = mkOption {
+          type = types.int;
+          default = 1;
+          description = "Number of gunicorn workers to start";
+        };
+
+        extraEnv = mkOption {
+          type = types.attrsOf types.str;
+          default = { };
+          description = "Additional environment variables to export";
+        };
+
+        extraEnvFiles = mkOption {
+          type = types.listOf types.str;
+          default = [ ];
+          description =
+            "Additional files to source as environment variables (useful for secrets)";
+        };
+
+        disableACME = mkOption {
+          type = types.bool;
+          default = false;
+          description =
+            "If true, the HTTPS certificate will be self-signed instead of requested through ACME";
+        };
+
+        user = mkOption {
+          type = types.str;
+          default = name;
+          description =
+            "The user to use to run the maintenance tasks and the gunicorn service.";
+        };
+
+        group = mkOption {
+          type = types.str;
+          default = name;
+          description =
+            "The group to use to run the maintenance tasks and the gunicorn service.";
+        };
+      };
+
+      config = { manageScript = siteConfigs.${name}.manageScript; };
+    };
+
   siteToConfig = instanceName: instanceConfig:
     let
-      settingsModule =
-        withDefault "${instanceConfig.package.pname}.config.settings.base"
-        instanceConfig.settingsModule;
-
-      wsgiModule = withDefault "${instanceConfig.package.pname}.config.wsgi"
-        instanceConfig.wsgiModule;
-
       mediaDir = "/var/www/${instanceName}/media";
       secretKeyFile = "/var/www/${instanceName}/secret_key";
 
       environment = (mapAttrsToList (name: value: ''${name}="${value}"'') ({
-        DJANGO_SETTINGS_MODULE = settingsModule;
+        DJANGO_SETTINGS_MODULE = instanceConfig.settingsModule;
         DATABASE_URL = "postgresql:///${instanceName}";
         ALLOWED_HOSTS = instanceConfig.hostname;
         MEDIA_ROOT = mediaDir;
@@ -68,7 +176,8 @@ let
         wantedBy = [ "multi-user.target" ];
         serviceConfig = {
           Type = "oneshot";
-          User = instanceName;
+          User = instanceConfig.user;
+          Group = instanceConfig.group;
         };
         script = ''
           test -s ${secretKeyFile} || ${dependencyEnv}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile} && exit 0
@@ -85,7 +194,8 @@ let
         ];
         serviceConfig = {
           Type = "oneshot";
-          User = instanceName;
+          User = instanceConfig.user;
+          Group = instanceConfig.group;
           Environment = environment;
           EnvironmentFile = environmentFiles;
         };
@@ -100,7 +210,8 @@ let
         wantedBy = [ "multi-user.target" ];
         after = [ "maintenance-${instanceName}.service" ];
         serviceConfig = {
-          User = instanceName;
+          User = instanceConfig.user;
+          Group = instanceConfig.group;
           RuntimeDirectory = "gunicorn_${instanceName}";
           ExecReload = "${pkgs.coreutils}/bin/kill -s HUP $MAINPID";
           Environment = environment;
@@ -117,7 +228,7 @@ let
             --bind unix:${gunicornSock} \
             --workers ${toString instanceConfig.nbWorkers} \
             --worker-class gevent \
-            ${wsgiModule}:application
+            ${instanceConfig.wsgiModule}:application
         '';
       };
 
@@ -188,100 +299,10 @@ let
   siteConfigs = mapAttrs siteToConfig cfg.sites;
 in {
   options.django = {
-    sites = mkOption {
-      type = types.attrsOf (types.submodule {
-        options = {
-          package = mkOption { type = types.package; };
-          staticFilesPackage = mkOption { type = types.package; };
-
-          hostname = mkOption { type = types.str; };
-          aliases = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description =
-              "Additional hostnames that should redirect to `hostname`.";
-          };
-
-          settingsModule = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = ''
-              Import path for settings module. If not set, defaults to "<packageName>.config.settings.base"
-            '';
-          };
-
-          wsgiModule = mkOption {
-            type = types.nullOr types.str;
-            default = null;
-            description = ''
-              Import path for wsgi module. If not set, defaults to "<packageName>.config.wsgi"
-            '';
-          };
-
-          port = mkOption {
-            type = types.int;
-            default = 443;
-            description = ''
-              HTTP port to listen to.
-            '';
-          };
-
-          auth = mkOption {
-            type = types.nullOr (types.submodule {
-              options = {
-                user = mkOption { type = types.str; };
-                password = mkOption { type = types.str; };
-              };
-            });
-            default = null;
-            description = ''
-              If set, require an HTTP auth.
-            '';
-          };
-
-          mediaUrl = mkOption {
-            type = types.str;
-            default = "/media/";
-            description = "Path or URL to media files (ie. MEDIA_URL)";
-          };
-
-          staticUrl = mkOption {
-            type = types.str;
-            default = "/static/";
-            description = "Path or URL to static files (ie. STATIC_URL)";
-          };
-
-          nbWorkers = mkOption {
-            type = types.int;
-            default = 1;
-            description = "Number of gunicorn workers to start";
-          };
-
-          extraEnv = mkOption {
-            type = types.attrsOf types.str;
-            default = { };
-            description = "Additional environment variables to export";
-          };
-
-          extraEnvFiles = mkOption {
-            type = types.listOf types.str;
-            default = [ ];
-            description =
-              "Additional files to source as environment variables (useful for secrets)";
-          };
-
-          disableACME = mkOption {
-            type = types.bool;
-            default = false;
-            description =
-              "If true, the HTTPS certificate will be self-signed instead of requested through ACME";
-          };
-        };
-      });
-    };
+    sites = mkOption { type = types.attrsOf (types.submodule siteOpts); };
   };
 
-  config = mkIf (cfg.sites != [ ]) {
+  config = mkIf (cfg.sites != [ ]) ({
     environment.systemPackages =
       mapAttrsToList (site: conf: conf.manageScript) siteConfigs;
 
@@ -309,11 +330,17 @@ in {
         (mapAttrsToList (site: conf: conf.caddyVhosts) siteConfigs);
     };
 
-    users.users = lib.attrsets.mapAttrs (site: conf: {
-      isSystemUser = true;
-      group = site;
-    }) siteConfigs;
+    users.users = listToAttrs (map (conf: {
+      name = conf.user;
+      value = {
+        isSystemUser = true;
+        group = conf.group;
+      };
+    }) (attrValues cfg.sites));
 
-    users.groups = lib.attrsets.mapAttrs (site: conf: { }) siteConfigs;
-  };
+    users.groups = listToAttrs (map (conf: {
+      name = conf.group;
+      value = { };
+    }) (attrValues cfg.sites));
+  });
 }
