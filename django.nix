@@ -119,6 +119,13 @@ let
           description =
             "The group to use to run the maintenance tasks and the gunicorn service.";
         };
+
+        extraPackages = mkOption {
+          type = types.listOf types.package;
+          default = [ instanceConfig.package.python.pkgs.gunicorn instanceConfig.package.python.pkgs.gevent ];
+          description =
+            "Extra packages to install in the environment.";
+        };
       };
 
       config = { manageScript = siteConfigs.${name}.manageScript; };
@@ -162,13 +169,14 @@ let
           instanceConfig.mediaUrl
         ]));
 
-      dependencyEnv = instanceConfig.package.dependencyEnv.overrideAttrs
-        (oldAttrs: { pathsToLink = [ "/lib" ]; });
+      dependencyEnv = instanceConfig.package.python.withPackages (ps: [
+        instanceConfig.package
+      ] ++ instanceConfig.extraPackages);
     in {
       manageScript = pkgs.writeScriptBin "manage-${instanceName}" ''
         #!${pkgs.bash}/bin/bash
         ${exports}
-        ${dependencyEnv}/bin/django-admin $@
+        ${dependencyEnv.interpreter} -m django $@
       '';
 
       createSecretKeyTask = {
@@ -180,7 +188,7 @@ let
           Group = instanceConfig.group;
         };
         script = ''
-          test -s ${secretKeyFile} || ${dependencyEnv}/bin/python -c "from django.core.management.utils import get_random_secret_key; print(f'SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile} && exit 0
+          test -s ${secretKeyFile} || ${dependencyEnv.interpreter} -c "from django.core.management.utils import get_random_secret_key; print(f'SECRET_KEY=\"{get_random_secret_key()}\"')" > ${secretKeyFile} && exit 0
         '';
       };
 
@@ -201,7 +209,7 @@ let
         };
         script = ''
           ${exports}
-          ${dependencyEnv}/bin/django-admin migrate --noinput
+          ${dependencyEnv.interpreter} -m django migrate --noinput
         '';
       };
 
@@ -218,11 +226,8 @@ let
           EnvironmentFile = environmentFiles;
         };
 
-        script = let
-          gunicornEnv = instanceConfig.package.python.withPackages
-            (ps: [ ps.gunicorn ps.setuptools ps.gevent ]);
-        in ''
-          ${gunicornEnv}/bin/gunicorn \
+        script = ''
+          ${dependencyEnv.interpreter} -m gunicorn \
             --name gunicorn-${instanceName} \
             --pythonpath ${dependencyEnv}/${instanceConfig.package.python.sitePackages} \
             --bind unix:${gunicornSock} \

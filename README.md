@@ -11,9 +11,7 @@ websites. Use it like this (in your `configuration.nix`):
     # in the key (eg. prod)
     # See below for places where the instance name is used
     mysite_prod = {
-      # The derivation containing your Python environment as a 
-      # `dependencyEnv` attribute (see the docs of the `package` option below
-      # for details)
+      # Your Django project as a Python project (see below for required structure)
       package = pkgs.mysite;
       # The derivation containing your static files, collected by Django (see
       # the docs of the `staticFilesPackage` option below for details)
@@ -48,10 +46,8 @@ with Nix example](https://github.com/sephii/django-nix-package-example) for work
 
 Derivation that contains your Django project.
 
-The derivation is expected to have a `dependencyEnv` passthru attribute, which
-should be the Python environment with all dependencies. If you’re using
-[poetry2nix](https://github.com/nix-community/poetry2nix),
-this is automatically added by [mkPoetryApplication](https://github.com/nix-community/poetry2nix#mkPoetryApplication).
+This derivation must include a `python` passthru that points to the Python derivation used to build
+your package (poetry2nix’s `mkPoetryApplication` does that by default).
 
 ### `staticFilesPackage`
 
@@ -62,7 +58,9 @@ Derivation that contains your project static files. Usually the result of
 something like this:
 
 ``` nix
-staticFilesPackage = stdenv.mkDerivation {
+let
+  pythonEnv = package.python.withPackages (_: [ package ]);
+in stdenv.mkDerivation {
   pname = "${package.pname}-static";
   version = package.version;
   src = ./.;
@@ -72,13 +70,21 @@ staticFilesPackage = stdenv.mkDerivation {
     export MEDIA_ROOT=/dev/null
     export SECRET_KEY=dummy
     export DATABASE_URL=sqlite://:memory:
-    ${package.dependencyEnv}/bin/django-admin collectstatic --noinput
+    ${pythonEnv.interpreter} -m django collectstatic --noinput
   '';
   phases = [ "buildPhase" ];
-};
+}
 ```
 
 Feel free to adapt this if you use external assets builders such as Webpack.
+
+### `extraPackages`
+
+Default value: `[ python.pkgs.gunicorn python.pkgs.gevent ]`
+
+Extra Python packages to install in the environment. If you set this option,
+make sure to include the `gunicorn` and `gevent` packages somehow (either by
+adding them as a dependency of your package, or by adding them to this option).
 
 ### `hostname`
 
@@ -179,7 +185,7 @@ Read-only
 
 This option will contain a derivation that allows you to run Django management
 commands. To invoke it, use
-`${config.django.sites.my_site.manageScript}/bin/manage-my_site`. For example ,
+`${config.django.sites.my_site.manageScript}/bin/manage-my_site`. For example,
 to create a systemd timer that runs a Django management command every minute:
 
 ``` nix
