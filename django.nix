@@ -149,6 +149,7 @@ let
       } // instanceConfig.extraEnv));
 
       environmentFiles = [ secretKeyFile ] ++ instanceConfig.extraEnvFiles;
+
       sourceEnvironmentFiles = ''
         set -a
         ${concatStringsSep "\n" (map (file: "source ${file}") environmentFiles)}
@@ -208,7 +209,6 @@ let
           EnvironmentFile = environmentFiles;
         };
         script = ''
-          ${exports}
           ${dependencyEnv.interpreter} -m django migrate --noinput
         '';
       };
