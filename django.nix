@@ -221,7 +221,9 @@ let
           User = instanceConfig.user;
           Group = instanceConfig.group;
           RuntimeDirectory = "gunicorn_${instanceName}";
+          # https://docs.gunicorn.org/en/stable/deploy.html#systemd
           ExecReload = "${pkgs.coreutils}/bin/kill -s HUP $MAINPID";
+          KillMode = "mixed";
           Environment = environment;
           EnvironmentFile = environmentFiles;
         };
