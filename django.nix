@@ -306,10 +306,10 @@ let
   siteConfigs = mapAttrs siteToConfig cfg.sites;
 in {
   options.django = {
-    sites = mkOption { type = types.attrsOf (types.submodule siteOpts); };
+    sites = mkOption { type = types.attrsOf (types.submodule siteOpts); default = { }; };
   };
 
-  config = mkIf (cfg.sites != [ ]) ({
+  config = mkIf (cfg.sites != { }) ({
     environment.systemPackages =
       mapAttrsToList (site: conf: conf.manageScript) siteConfigs;
 
