@@ -240,7 +240,7 @@ let
       };
 
       databaseUser = {
-        name = instanceName;
+        name = instanceConfig.user;
         ensurePermissions = { "DATABASE ${instanceName}" = "ALL PRIVILEGES"; };
       };
 
