@@ -226,11 +226,13 @@ let
           User = instanceConfig.user;
           Group = instanceConfig.group;
           RuntimeDirectory = "gunicorn_${instanceName}";
+          RuntimeDirectoryPreserve = true;
           # https://docs.gunicorn.org/en/stable/deploy.html#systemd
           ExecReload = "${pkgs.coreutils}/bin/kill -s HUP $MAINPID";
           KillMode = "mixed";
           Environment = environment;
           EnvironmentFile = environmentFiles;
+          PrivateTmp = "true";
         };
 
         script = ''
@@ -254,6 +256,7 @@ let
           serverAliases =
             map (hostname: "${hostname}:${toString instanceConfig.port}")
             instanceConfig.aliases;
+
           extraConfig = ''
             ${optionalString instanceConfig.disableACME ''
               tls internal
@@ -264,7 +267,7 @@ let
                 ${instanceConfig.auth.user} ${instanceConfig.auth.password}
               }''}
 
-            ${if localStaticPaths != "" then ''
+            ${optionalString (localStaticPaths != "") ''
               @notStatic {
                 not path ${localStaticPaths}
               }
@@ -276,11 +279,16 @@ let
               handle_path ${instanceConfig.staticUrl}* {
                 root * ${instanceConfig.staticFilesPackage}
                 file_server
-              }
+              }''}
 
-              reverse_proxy @notStatic unix/${gunicornSock}'' else ''
-                reverse_proxy unix/${gunicornSock}
-              ''}
+            reverse_proxy ${optionalString (localStaticPaths != "") "@notStatic"} unix/${gunicornSock} {
+              # Upstream might take a while to respond while deploying
+              lb_try_duration 15s
+
+              transport http {
+                dial_timeout 15s
+              }
+            }
           '';
         };
       } // (optionalAttrs (!isLocalPath instanceConfig.staticUrl) {
