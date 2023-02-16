@@ -320,9 +320,9 @@ let
       });
 
       staticDirs = [
-        "d /var/www/${instanceName} 0555 ${instanceName} caddy - -"
-        "d ${mediaDir} 0755 ${instanceName} caddy - -"
-        "f ${secretKeyFile} 0750 ${instanceName} ${instanceName} - -"
+        "d /var/www/${instanceName} 0555 ${instanceConfig.user} caddy - -"
+        "d ${mediaDir} 0755 ${instanceConfig.user} caddy - -"
+        "f ${secretKeyFile} 0750 ${instanceConfig.user} ${instanceConfig.group} - -"
       ];
     };
 
