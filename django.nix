@@ -268,6 +268,8 @@ let
             instanceConfig.aliases;
 
           extraConfig = ''
+            header -Server
+
             ${optionalString instanceConfig.disableACME ''
               tls internal
             ''}
