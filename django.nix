@@ -136,6 +136,12 @@ let
             set, you’re responsible of creating the database (and database user)
             yourself.'';
         };
+
+        mediaDir = mkOption {
+          type = types.nullOr types.str;
+          default = "/var/www/${name}/media";
+          description = "Path to the media directory.";
+        };
       };
 
       config = { manageScript = siteConfigs.${name}.manageScript; };
@@ -143,14 +149,13 @@ let
 
   siteToConfig = instanceName: instanceConfig:
     let
-      mediaDir = "/var/www/${instanceName}/media";
       secretKeyFile = "/var/www/${instanceName}/secret_key";
 
       environment = (mapAttrsToList (name: value: ''${name}="${value}"'') ({
         DJANGO_SETTINGS_MODULE = instanceConfig.settingsModule;
         DATABASE_URL = if instanceConfig.databaseUrl == null then "postgresql:///${instanceName}" else instanceConfig.databaseUrl;
         ALLOWED_HOSTS = instanceConfig.hostname;
-        MEDIA_ROOT = mediaDir;
+        MEDIA_ROOT = instanceConfig.mediaDir;
         # The secret key is overridden by the contents of the secret key file
         SECRET_KEY = "";
         MEDIA_URL = instanceConfig.mediaUrl;
@@ -284,8 +289,9 @@ let
                 not path ${localStaticPaths}
               }
 
-              file_server ${instanceConfig.mediaUrl}* {
-                root /var/www/${instanceName}
+              handle_path ${instanceConfig.mediaUrl}* {
+                root * ${instanceConfig.mediaDir}
+                file_server
               }
 
               handle_path ${instanceConfig.staticUrl}* {
@@ -315,7 +321,7 @@ let
         "${instanceConfig.mediaUrl}:${instanceConfig.port}" = {
           extraConfig = ''
             file_server {
-              root ${mediaDir}
+              root ${instanceConfig.mediaDir}
             }
           '';
         };
@@ -323,7 +329,7 @@ let
 
       staticDirs = [
         "d /var/www/${instanceName} 0555 ${instanceConfig.user} caddy - -"
-        "d ${mediaDir} 0755 ${instanceConfig.user} caddy - -"
+        "d ${instanceConfig.mediaDir} 0755 ${instanceConfig.user} caddy - -"
         "f ${secretKeyFile} 0750 ${instanceConfig.user} ${instanceConfig.group} - -"
       ];
     };
