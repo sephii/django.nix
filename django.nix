@@ -126,6 +126,16 @@ let
           description =
             "Extra packages to install in the environment.";
         };
+
+        databaseUrl = mkOption {
+          type = types.nullOr types.str;
+          default = null;
+          description =
+            ''DSN for database connection. If not set, will default to using a
+            local PostgreSQL connection to a database with the instance name. If
+            set, you’re responsible of creating the database (and database user)
+            yourself.'';
+        };
       };
 
       config = { manageScript = siteConfigs.${name}.manageScript; };
@@ -138,7 +148,7 @@ let
 
       environment = (mapAttrsToList (name: value: ''${name}="${value}"'') ({
         DJANGO_SETTINGS_MODULE = instanceConfig.settingsModule;
-        DATABASE_URL = "postgresql:///${instanceName}";
+        DATABASE_URL = if instanceConfig.databaseUrl == null then "postgresql:///${instanceName}" else instanceConfig.databaseUrl;
         ALLOWED_HOSTS = instanceConfig.hostname;
         MEDIA_ROOT = mediaDir;
         # The secret key is overridden by the contents of the secret key file
@@ -246,10 +256,10 @@ let
         '';
       };
 
-      databaseUser = {
+      databaseUser = if instanceConfig.databaseUrl == null then {
         name = instanceConfig.user;
         ensurePermissions = { "DATABASE ${instanceName}" = "ALL PRIVILEGES"; };
-      };
+      } else null;
 
       caddyVhosts = {
         "${instanceConfig.hostname}:${toString instanceConfig.port}" = {
@@ -326,10 +336,14 @@ in {
     environment.systemPackages =
       mapAttrsToList (site: conf: conf.manageScript) siteConfigs;
 
-    services.postgresql = {
-      enable = true;
-      ensureDatabases = attrNames siteConfigs;
-      ensureUsers = mapAttrsToList (site: conf: conf.databaseUser) siteConfigs;
+    services.postgresql = let
+      users = filter (item: item != null)
+        (mapAttrsToList (site: conf: conf.databaseUser) siteConfigs);
+      databases = attrNames (filterAttrs (k: v: v.databaseUrl == null) cfg.sites);
+    in {
+      enable = users != { } || databases != [ ];
+      ensureDatabases = databases;
+      ensureUsers = users;
     };
 
     systemd.tmpfiles.rules = [ "d /var/www 0755 root root - -" ]
