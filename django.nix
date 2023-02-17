@@ -137,10 +137,10 @@ let
             yourself.'';
         };
 
-        mediaDir = mkOption {
-          type = types.nullOr types.str;
-          default = "/var/www/${name}/media";
-          description = "Path to the media directory.";
+        baseDir = mkOption {
+          type = types.str;
+          default = "/var/www/${name}";
+          description = "Base directory where files relative to the site will be placed.";
         };
       };
 
@@ -149,13 +149,14 @@ let
 
   siteToConfig = instanceName: instanceConfig:
     let
-      secretKeyFile = "/var/www/${instanceName}/secret_key";
+      secretKeyFile = "${instanceConfig.baseDir}/secret_key";
+      mediaDir = "${instanceConfig.baseDir}/media";
 
       environment = (mapAttrsToList (name: value: ''${name}="${value}"'') ({
         DJANGO_SETTINGS_MODULE = instanceConfig.settingsModule;
         DATABASE_URL = if instanceConfig.databaseUrl == null then "postgresql:///${instanceName}" else instanceConfig.databaseUrl;
         ALLOWED_HOSTS = instanceConfig.hostname;
-        MEDIA_ROOT = instanceConfig.mediaDir;
+        MEDIA_ROOT = mediaDir;
         # The secret key is overridden by the contents of the secret key file
         SECRET_KEY = "";
         MEDIA_URL = instanceConfig.mediaUrl;
@@ -272,6 +273,11 @@ let
             map (hostname: "${hostname}:${toString instanceConfig.port}")
             instanceConfig.aliases;
 
+          logFormat = ''
+            output file ${config.services.caddy.logDir}/access-${instanceConfig.hostname}.log
+            format console
+          '';
+
           extraConfig = ''
             header -Server
 
@@ -290,7 +296,7 @@ let
               }
 
               handle_path ${instanceConfig.mediaUrl}* {
-                root * ${instanceConfig.mediaDir}
+                root * ${mediaDir}
                 file_server
               }
 
@@ -321,15 +327,15 @@ let
         "${instanceConfig.mediaUrl}:${instanceConfig.port}" = {
           extraConfig = ''
             file_server {
-              root ${instanceConfig.mediaDir}
+              root ${mediaDir}
             }
           '';
         };
       });
 
       staticDirs = [
-        "d /var/www/${instanceName} 0555 ${instanceConfig.user} caddy - -"
-        "d ${instanceConfig.mediaDir} 0755 ${instanceConfig.user} caddy - -"
+        "d ${instanceConfig.baseDir} 0555 ${instanceConfig.user} caddy - -"
+        "d ${mediaDir} 0755 ${instanceConfig.user} caddy - -"
         "f ${secretKeyFile} 0750 ${instanceConfig.user} ${instanceConfig.group} - -"
       ];
     };
