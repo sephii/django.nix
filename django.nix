@@ -198,7 +198,7 @@ let
     in {
       manageScript = pkgs.writeScriptBin "manage-${instanceName}" ''
         #!${pkgs.bash}/bin/bash
-        sudo -u ${instanceConfig.user} ${manageScriptNoSudo}/bin/manage-${instanceName}-nosudo $@
+        ${pkgs.sudo}/sbin/sudo -u ${instanceConfig.user} ${manageScriptNoSudo}/bin/manage-${instanceName}-nosudo $@
       '';
 
       createSecretKeyTask = {
