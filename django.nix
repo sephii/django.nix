@@ -189,16 +189,21 @@ let
       dependencyEnv = instanceConfig.package.python.withPackages (ps: [
         instanceConfig.package
       ] ++ instanceConfig.extraPackages);
-
-      manageScriptNoSudo = pkgs.writeScriptBin "manage-${instanceName}-nosudo" ''
-        #!${pkgs.bash}/bin/bash
-        ${exports}
-        ${dependencyEnv.interpreter} -m django $@
-      '';
     in {
       manageScript = pkgs.writeScriptBin "manage-${instanceName}" ''
         #!${pkgs.bash}/bin/bash
-        ${pkgs.sudo}/sbin/sudo -u ${instanceConfig.user} ${manageScriptNoSudo}/bin/manage-${instanceName}-nosudo $@
+
+        sudo() {
+          if [[ "$USER" != "${instanceConfig.user}" ]]; then
+            /run/wrappers/bin/sudo -u ${instanceConfig.user} --preserve-env "$@"
+          else
+            exec "$@"
+          fi
+        }
+
+        ${exports}
+
+        sudo ${dependencyEnv.interpreter} -m django $@
       '';
 
       createSecretKeyTask = {
