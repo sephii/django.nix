@@ -303,6 +303,7 @@ let
               handle_path ${instanceConfig.staticUrl}* {
                 root * ${instanceConfig.staticFilesPackage}
                 file_server
+                header -Etag
               }''}
 
             reverse_proxy ${optionalString (localStaticPaths != "") "@notStatic"} unix/${gunicornSock} {
@@ -320,6 +321,7 @@ let
           extraConfig = ''
             file_server {
               root ${instanceConfig.staticFilesPackage}
+              header -Etag
             }
           '';
         };
