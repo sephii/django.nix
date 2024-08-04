@@ -269,7 +269,7 @@ let
 
       databaseUser = if instanceConfig.databaseUrl == null then {
         name = instanceConfig.user;
-        ensurePermissions = { "DATABASE ${instanceName}" = "ALL PRIVILEGES"; };
+        ensureDBOwnership = true;
       } else null;
 
       caddyVhosts = {
